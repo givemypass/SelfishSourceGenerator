@@ -29,34 +29,29 @@ namespace SelfishSourceGenerator
                     }
 
                     var componentFields = new List<string>();
-                    var systemFields = new List<string>();
                     foreach (var member in syntaxContext.GetMembers())
                         if (member is IFieldSymbol fieldSymbol)
                         {
                             if (fieldSymbol.Type.IsImplementingInterface(COMPONENT_INTERFACE))
                                 componentFields.Add(fieldSymbol.Name);
-                            if (fieldSymbol.Type.IsImplementingInterface(SYSTEM_INTERFACE))
-                                systemFields.Add(fieldSymbol.Name);
                         }
 
-                    if (componentFields.Count > 0 || systemFields.Count > 0)
+                    if (componentFields.Count > 0)
                         return new
                         {
                             ClassSymbol = syntaxContext,
                             ComponentFields = componentFields,
-                            SystemFields = systemFields,
                         };
                     return null;
                 })
                 .Where(a => a != null);
 
             context.RegisterSourceOutput(actorPipeline,
-                (productionContext, source) => ProcessActor(productionContext, source.ClassSymbol, source.ComponentFields,
-                    source.SystemFields));
+                (productionContext, source) => ProcessActor(productionContext, source.ClassSymbol, source.ComponentFields));
         }
 
         private static void ProcessActor(SourceProductionContext productionContext, INamedTypeSymbol classSymbol,
-            List<string> componentFields, List<string> systemFields)
+            List<string> componentFields)
         {
             var namespaceName = classSymbol.ContainingNamespace.IsGlobalNamespace
                 ? string.Empty
@@ -65,21 +60,11 @@ namespace SelfishSourceGenerator
             var componentMethodBody = new StringBuilder();
             if (componentFields.Count > 0)
             {
-                componentMethodBody.AppendLine("    public void SetComponents()");
+                componentMethodBody.AppendLine("    protected override void SetComponents()");
                 componentMethodBody.AppendLine("    {");
                 foreach (var field in componentFields)
                     componentMethodBody.AppendLine($"        Entity.Set({field});");
                 componentMethodBody.AppendLine("    }");
-            }
-
-            var systemMethodBody = new StringBuilder();
-            if (systemFields.Count > 0)
-            {
-                if (componentFields.Count > 0) systemMethodBody.AppendLine(); 
-                systemMethodBody.AppendLine("    public void SetSystems()");
-                systemMethodBody.AppendLine("    {");
-                foreach (var field in systemFields) systemMethodBody.AppendLine($"        Entity.SetSystem({field});");
-                systemMethodBody.AppendLine("    }");
             }
 
             // Собираем весь код
@@ -91,10 +76,9 @@ using SelfishFramework.Src.Core;
 
 {namespaceName}
 {{
-    partial class {classSymbol.Name}
+    public partial class {classSymbol.Name}
     {{
     {componentMethodBody}
-    {systemMethodBody}
     }}
 }}
     ";
