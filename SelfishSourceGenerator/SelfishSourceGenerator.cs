@@ -1,8 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SelfishSourceGenerator
@@ -13,11 +16,144 @@ namespace SelfishSourceGenerator
         private const string ACTOR_TYPE_NAME = "Actor";
         private const string COMPONENT_INTERFACE = "IComponent";
         private const string SYSTEM_INTERFACE = "ISystem";
+        private const string PROVIDER_COMPONENT_ATTRIBUTE = "ProviderComponent";
+        private const string REACT_LOCAL_COMMAND_INTERFACE = "IReactLocal";
+        private const string REACT_GLOBAL_COMMAND_INTERFACE = "IReactGlobal";
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
+            ActorPipeline(context);
+            ReactCommandsPipeline(context);
+            // var providerComponentPipeline = context.SyntaxProvider.CreateSyntaxProvider(IsStruct, GetStructSymbol)
+            //     .Where(a => a != null)
+            //     .Select((symbol, token) =>
+            //     {
+            //         token.ThrowIfCancellationRequested();
+            //
+            //         if (!symbol.IsImplementingInterface(COMPONENT_INTERFACE))
+            //         {
+            //             return null;
+            //         }
+            //
+            //         foreach (var attribute in symbol.GetAttributes())
+            //         {
+            //             if (attribute.AttributeClass?.Name == PROVIDER_COMPONENT_ATTRIBUTE)
+            //             {
+            //                 var typeArg = attribute.ConstructorArguments.FirstOrDefault();
+            //                 var targetTypeName = typeArg.Value is INamedTypeSymbol t
+            //                     ? t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            //                     : null;
+            //                 return new
+            //                 {
+            //                     StructSymbol = symbol,
+            //                     TargetTypeName = targetTypeName,
+            //                     IsProviderComponent = true,
+            //                 };
+            //             }
+            //         }
+            //         return null;
+            //     })
+            //     .Where(a => a != null);
+        }
+
+        private void ReactCommandsPipeline(IncrementalGeneratorInitializationContext context)
+        {
+            var reactCommandsPipeline = context.SyntaxProvider
+                .CreateSyntaxProvider(IsNotAbstractClass, GetClassSymbol)
+                .Where(a => a != null)
+                .Select((symbol, token) =>
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    if (!symbol.IsImplementingInterface(SYSTEM_INTERFACE))
+                    {
+                        return null;
+                    }
+
+                    string[] localCommands = Array.Empty<string>();
+                    string[] globalCommands = Array.Empty<string>();
+                    if (symbol.IsImplementingInterface(REACT_LOCAL_COMMAND_INTERFACE))
+                    {
+                        localCommands = symbol.AllInterfaces
+                            .Where(i => i.Name == REACT_LOCAL_COMMAND_INTERFACE && i.IsGenericType)
+                            .Select(i => i.TypeArguments.First())
+                            .OfType<INamedTypeSymbol>()
+                            .Select(t => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                            .ToArray();
+                    }
+                    
+                    if (symbol.IsImplementingInterface(REACT_GLOBAL_COMMAND_INTERFACE))
+                    {
+                        globalCommands = symbol.AllInterfaces
+                            .Where(i => i.Name == REACT_GLOBAL_COMMAND_INTERFACE && i.IsGenericType)
+                            .Select(i => i.TypeArguments.First())
+                            .OfType<INamedTypeSymbol>()
+                            .Select(t => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                            .ToArray();
+                    }
+
+                    return new
+                    {
+                        ClassSymbol = symbol,
+                        LocalCommands = localCommands,
+                        GlobalCommands = globalCommands,
+                    };
+                })
+                .Where(a => a != null);
+            context.RegisterSourceOutput(reactCommandsPipeline, (productionContext, source) => GenerateLocalCommandListener(productionContext, source.ClassSymbol, source.LocalCommands, source.GlobalCommands));
+        }
+
+        private void GenerateLocalCommandListener(SourceProductionContext context, INamedTypeSymbol classSymbol, string[] localCommands, string[] globalCommands)
+        {
+            var namespaceName = GetNamespaceName(classSymbol);
+            var registerMethod = new StringBuilder();
+            registerMethod.AppendLine("    public void RegisterCommands()");
+            registerMethod.AppendLine("    {");
+            foreach (var command in localCommands)
+                registerMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<LocalCommandModule>().Register<{command}>(Owner, this);");
+            foreach (var command in globalCommands)
+            {
+                registerMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<GlobalCommandModule>().Register<{command}>(this);");
+            }
+            registerMethod.AppendLine("    }");
+            
+            var unregisterMethod = new StringBuilder();
+            unregisterMethod.AppendLine("    public void UnregisterCommands()");
+            unregisterMethod.AppendLine("    {");
+            foreach (var command in localCommands)
+                unregisterMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<LocalCommandModule>().Unregister<{command}>(Owner, this);");
+            foreach (var command in globalCommands)
+            {
+                unregisterMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<GlobalCommandModule>().Unregister<{command}>(this);");
+            }
+            unregisterMethod.AppendLine("    }");
+            
+            var code = $@"
+// <auto-generated/>
+#pragma warning disable
+#nullable enable
+using SelfishFramework.Src.Core;
+using SelfishFramework.Src.Core.SystemModules.CommandBusModule;
+
+
+{namespaceName}
+{{
+    public partial class {classSymbol.Name}
+    {{
+    {registerMethod}
+
+    {unregisterMethod}
+    }}
+}}
+    ";
+            var className = classSymbol.Name;
+            context.AddSource($"{className}_commands.g.cs", code);
+        }
+
+        private static void ActorPipeline(IncrementalGeneratorInitializationContext context)
+        {
             var actorPipeline = context.SyntaxProvider
-                .CreateSyntaxProvider(IsClass, GetClassSymbol)
+                .CreateSyntaxProvider(IsNotAbstractClass, GetClassSymbol)
                 .Where(a => a != null)
                 .Select((syntaxContext, token) =>
                 {
@@ -36,13 +172,11 @@ namespace SelfishSourceGenerator
                                 componentFields.Add(fieldSymbol.Name);
                         }
 
-                    if (componentFields.Count > 0)
-                        return new
-                        {
-                            ClassSymbol = syntaxContext,
-                            ComponentFields = componentFields,
-                        };
-                    return null;
+                    return new
+                    {
+                        ClassSymbol = syntaxContext,
+                        ComponentFields = componentFields,
+                    };
                 })
                 .Where(a => a != null);
 
@@ -53,21 +187,16 @@ namespace SelfishSourceGenerator
         private static void ProcessActor(SourceProductionContext productionContext, INamedTypeSymbol classSymbol,
             List<string> componentFields)
         {
-            var namespaceName = classSymbol.ContainingNamespace.IsGlobalNamespace
-                ? string.Empty
-                : $"namespace {classSymbol.ContainingNamespace.ToDisplayString()}";
+            var namespaceName = GetNamespaceName(classSymbol);
 
             var componentMethodBody = new StringBuilder();
-            if (componentFields.Count > 0)
-            {
-                componentMethodBody.AppendLine("    protected override void SetComponents()");
-                componentMethodBody.AppendLine("    {");
-                foreach (var field in componentFields)
-                    componentMethodBody.AppendLine($"        Entity.Set({field});");
-                componentMethodBody.AppendLine("    }");
-            }
+            componentMethodBody.AppendLine("    protected override void SetComponents()");
+            componentMethodBody.AppendLine("    {");
+            componentMethodBody.AppendLine("        base.SetComponents();");
+            foreach (var field in componentFields)
+                componentMethodBody.AppendLine($"        Entity.Set({field});");
+            componentMethodBody.AppendLine("    }");
 
-            // Собираем весь код
             var code = $@"
 // <auto-generated/>
 #pragma warning disable
@@ -86,16 +215,35 @@ using SelfishFramework.Src.Core;
             productionContext.AddSource($"{className}.g.cs", code);
         }
 
+        private static string GetNamespaceName(INamedTypeSymbol classSymbol)
+        {
+            return classSymbol.ContainingNamespace.IsGlobalNamespace
+                ? string.Empty
+                : $"namespace {classSymbol.ContainingNamespace.ToDisplayString()}";
+        }
+
 
         private static INamedTypeSymbol GetClassSymbol(GeneratorSyntaxContext context, CancellationToken token)
         {
             var candidate = Unsafe.As<ClassDeclarationSyntax>(context.Node);
-            return context.SemanticModel.GetDeclaredSymbol(candidate) as INamedTypeSymbol;
+            return ModelExtensions.GetDeclaredSymbol(context.SemanticModel, candidate) as INamedTypeSymbol;
+        }
+        
+        private static INamedTypeSymbol GetStructSymbol(GeneratorSyntaxContext context, CancellationToken token)
+        {
+            var candidate = Unsafe.As<StructDeclarationSyntax>(context.Node);
+            return ModelExtensions.GetDeclaredSymbol(context.SemanticModel, candidate) as INamedTypeSymbol;
         }
 
-        private static bool IsClass(SyntaxNode node, CancellationToken token)
+        private static bool IsNotAbstractClass(SyntaxNode node, CancellationToken token)
         {
-            return node is ClassDeclarationSyntax;
+            return node is ClassDeclarationSyntax classDeclaration &&
+                   !classDeclaration.Modifiers.Any(SyntaxKind.AbstractKeyword);
+        }
+        
+        private static bool IsStruct(SyntaxNode node, CancellationToken token)
+        {
+            return node is StructDeclarationSyntax;
         }
     }
 }
