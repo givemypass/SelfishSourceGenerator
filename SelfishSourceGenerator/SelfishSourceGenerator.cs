@@ -91,10 +91,10 @@ namespace SelfishSourceGenerator
             registerMethod.AppendLine("    public override void RegisterCommands()");
             registerMethod.AppendLine("    {");
             foreach (var command in localCommands)
-                registerMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<LocalCommandModule>().Register<{command}>(Owner, this);");
+                registerMethod.AppendLine($"        Owner.GetWorld().ModuleRegistry.GetModule<LocalCommandModule>().Register<{command}>(Owner, this);");
             foreach (var command in globalCommands)
             {
-                registerMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<GlobalCommandModule>().Register<{command}>(this);");
+                registerMethod.AppendLine($"        Owner.GetWorld().ModuleRegistry.GetModule<GlobalCommandModule>().Register<{command}>(this);");
             }
             registerMethod.AppendLine("    }");
             
@@ -102,10 +102,10 @@ namespace SelfishSourceGenerator
             unregisterMethod.AppendLine("    public override void UnregisterCommands()");
             unregisterMethod.AppendLine("    {");
             foreach (var command in localCommands)
-                unregisterMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<LocalCommandModule>().Unregister<{command}>(Owner, this);");
+                unregisterMethod.AppendLine($"        Owner.GetWorld().ModuleRegistry.GetModule<LocalCommandModule>().Unregister<{command}>(Owner, this);");
             foreach (var command in globalCommands)
             {
-                unregisterMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<GlobalCommandModule>().Unregister<{command}>(this);");
+                unregisterMethod.AppendLine($"        Owner.GetWorld().ModuleRegistry.GetModule<GlobalCommandModule>().Unregister<{command}>(this);");
             }
             unregisterMethod.AppendLine("    }");
             
