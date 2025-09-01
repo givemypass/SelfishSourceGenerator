@@ -19,41 +19,22 @@ namespace SelfishSourceGenerator
         private const string PROVIDER_COMPONENT_ATTRIBUTE = "ProviderComponent";
         private const string REACT_LOCAL_COMMAND_INTERFACE = "IReactLocal";
         private const string REACT_GLOBAL_COMMAND_INTERFACE = "IReactGlobal";
+        private const string IDENTIFIER_CONTAINER = "IdentifierContainer";
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             ActorPipeline(context);
             ReactCommandsPipeline(context);
-            // var providerComponentPipeline = context.SyntaxProvider.CreateSyntaxProvider(IsStruct, GetStructSymbol)
+            // context.SyntaxProvider.CreateSyntaxProvider(IsNotAbstractClass, GetClassSymbol)
             //     .Where(a => a != null)
-            //     .Select((symbol, token) =>
+            //     .Select(((symbol, token) =>
             //     {
             //         token.ThrowIfCancellationRequested();
-            //
-            //         if (!symbol.IsImplementingInterface(COMPONENT_INTERFACE))
+            //         if (!symbol.IsDerivedFrom(IDENTIFIER_CONTAINER))
             //         {
             //             return null;
             //         }
-            //
-            //         foreach (var attribute in symbol.GetAttributes())
-            //         {
-            //             if (attribute.AttributeClass?.Name == PROVIDER_COMPONENT_ATTRIBUTE)
-            //             {
-            //                 var typeArg = attribute.ConstructorArguments.FirstOrDefault();
-            //                 var targetTypeName = typeArg.Value is INamedTypeSymbol t
-            //                     ? t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-            //                     : null;
-            //                 return new
-            //                 {
-            //                     StructSymbol = symbol,
-            //                     TargetTypeName = targetTypeName,
-            //                     IsProviderComponent = true,
-            //                 };
-            //             }
-            //         }
-            //         return null;
             //     })
-            //     .Where(a => a != null);
         }
 
         private void ReactCommandsPipeline(IncrementalGeneratorInitializationContext context)
@@ -107,7 +88,7 @@ namespace SelfishSourceGenerator
         {
             var namespaceName = GetNamespaceName(classSymbol);
             var registerMethod = new StringBuilder();
-            registerMethod.AppendLine("    public void RegisterCommands()");
+            registerMethod.AppendLine("    public override void RegisterCommands()");
             registerMethod.AppendLine("    {");
             foreach (var command in localCommands)
                 registerMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<LocalCommandModule>().Register<{command}>(Owner, this);");
@@ -118,7 +99,7 @@ namespace SelfishSourceGenerator
             registerMethod.AppendLine("    }");
             
             var unregisterMethod = new StringBuilder();
-            unregisterMethod.AppendLine("    public void UnregisterCommands()");
+            unregisterMethod.AppendLine("    public override void UnregisterCommands()");
             unregisterMethod.AppendLine("    {");
             foreach (var command in localCommands)
                 unregisterMethod.AppendLine($"        Owner.GetWorld().SystemModuleRegistry.GetModule<LocalCommandModule>().Unregister<{command}>(Owner, this);");
