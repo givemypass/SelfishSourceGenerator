@@ -10,6 +10,7 @@ namespace SelfishSourceGenerator
     {
         private const string INJECTABLE_ATTRIBUTE_NAME = "SelfishFramework.Src.Core.Attributes.InjectableAttribute";
         private const string INJECT_ATTRIBUTE_NAME = "SelfishFramework.Src.Core.Attributes.InjectAttribute";
+        private const string IINJECTABLE_INTERFACE_NAME = "SelfishFramework.Src.Core.Dependency.IInjectable";
         
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
@@ -53,7 +54,7 @@ namespace SelfishSourceGenerator
             var namespaceName = Common.GetNamespaceName(classSymbol);
 
             var componentMethodBody = new StringBuilder();
-            componentMethodBody.AppendLine("    protected override void ResolveDependencies(DependencyContainer container)");
+            componentMethodBody.AppendLine("    public void ResolveDependencies(DependencyContainer container)");
             componentMethodBody.AppendLine("    {");
             foreach (var field in fields)
             {
@@ -73,7 +74,7 @@ using SelfishFramework.Src.Core.Dependency;
 
 {namespaceName}
 {{
-    public partial class {classSymbol.Name}
+    public partial class {classSymbol.Name} : {IINJECTABLE_INTERFACE_NAME}
     {{
     {componentMethodBody}
     }}
